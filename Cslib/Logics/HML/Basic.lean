@@ -51,22 +51,20 @@ namespace Cslib.Logic.HML
 /-- Propositions. -/
 inductive Proposition (Label : Type u) : Type u where
   | true
-  | false
   | and (φ₁ φ₂ : Proposition Label)
-  | or (φ₁ φ₂ : Proposition Label)
+  | neg (φ : Proposition Label)
   | diamond (μ : Label) (φ : Proposition Label)
-  | box (μ : Label) (φ : Proposition Label)
 
-/-- Negation of a proposition. -/
+/-- false, or, and box operators as notation -/
 @[simp, scoped grind =]
-def Proposition.neg (a : Proposition Label) : Proposition Label :=
-  match a with
-  | .true => .false
-  | .false => .true
-  | and a b => or a.neg b.neg
-  | or a b => and a.neg b.neg
-  | diamond μ a => box μ a.neg
-  | box μ a => diamond μ a.neg
+abbrev Proposition.false : Proposition Label :=
+  neg .true
+@[simp, scoped grind =]
+abbrev Proposition.or (φ₁ φ₂ : Proposition Label) : Proposition Label :=
+  neg (and (neg φ₁) (neg φ₂))
+@[simp, scoped grind =]
+abbrev Proposition.box (μ : Label) (φ : Proposition Label) : Proposition Label :=
+  neg (diamond μ (neg φ))
 
 /-- Finite conjunction of propositions. -/
 @[simp, scoped grind =]
@@ -86,15 +84,26 @@ inductive Satisfies (lts : LTS State Label) : State → Proposition Label → Pr
   | and {s : State} {a b : Proposition Label} :
     Satisfies lts s a → Satisfies lts s b →
     Satisfies lts s (.and a b)
-  | or₁ {s : State} {a b : Proposition Label} :
-    Satisfies lts s a → Satisfies lts s (.or a b)
-  | or₂ {s : State} {a b : Proposition Label} :
-    Satisfies lts s b → Satisfies lts s (.or a b)
   | diamond {s s' : State} {μ : Label} {a : Proposition Label}
     (htr : lts.Tr s μ s') (hs : Satisfies lts s' a) : Satisfies lts s (.diamond μ a)
-  | box {s : State} {μ : Label} {a : Proposition Label}
-    (h : ∀ s', lts.Tr s μ s' → Satisfies lts s' a) :
-    Satisfies lts s (.box μ a)
+  | negAnd₁ {s : State} {a b : Proposition Label} :
+    Satisfies lts s (.neg a) →
+    Satisfies lts s (.neg (.and a b))
+  | negAnd₂ {s : State} {a b : Proposition Label} :
+    Satisfies lts s (.neg b) →
+    Satisfies lts s (.neg (.and a b))
+  | negNeg {s : State} {a : Proposition Label} :
+    Satisfies lts s a →
+    Satisfies lts s (.neg (.neg a))
+  | negDiamond {s : State} {μ : Label} {a : Proposition Label} :
+    (∀ s', lts.Tr s μ s' → Satisfies lts s' a.neg) →
+    Satisfies lts s (.neg (.diamond μ a))
+
+/-- A state satisfies a proposition iff it does not satisfy the negation of the proposition. -/
+@[simp, scoped grind =]
+theorem neg_satisfies {lts : LTS State Label} :
+    ¬Satisfies lts s a.neg ↔ Satisfies lts s a := by
+  induction a generalizing s <;> grind
 
 /-- Denotation of a proposition. -/
 @[simp, scoped grind =]
@@ -102,11 +111,9 @@ def Proposition.denotation (a : Proposition Label) (lts : LTS State Label)
     : Set State :=
   match a with
   | .true => Set.univ
-  | .false => ∅
   | .and a b => a.denotation lts ∩ b.denotation lts
-  | .or a b => a.denotation lts ∪ b.denotation lts
+  | .neg a => {s | s ∉ a.denotation lts}
   | .diamond μ a => {s | ∃ s', lts.Tr s μ s' ∧ s' ∈ a.denotation lts}
-  | .box μ a => {s | ∀ s', lts.Tr s μ s' → s' ∈ a.denotation lts}
 
 /-- The theory of a state is the set of all propositions that it satifies. -/
 abbrev theory (lts : LTS State Label) (s : State) : Set (Proposition Label) :=
@@ -122,12 +129,6 @@ open Proposition LTS Bisimulation Simulation
 @[scoped grind =]
 theorem satisfies_mem_denotation {lts : LTS State Label} :
     Satisfies lts s a ↔ s ∈ a.denotation lts := by
-  induction a generalizing s <;> grind
-
-/-- A state satisfies a proposition iff it does not satisfy the negation of the proposition. -/
-@[simp, scoped grind =]
-theorem neg_satisfies {lts : LTS State Label} :
-    ¬Satisfies lts s a.neg ↔ Satisfies lts s a := by
   induction a generalizing s <;> grind
 
 /-- A state is in the denotation of a proposition iff it is not in the denotation of the negation
@@ -233,20 +234,20 @@ theorem theoryEq_isBisimulation (lts : LTS State Label)
     cases (theoryEq_satisfies h.symm hs2_diamond) with | @diamond _ s1'' _ _ htr1 hsat =>
     grind [propositions_complete dist_formula ⟨s1'', htr1⟩]
 
-/-- If two states are in a bisimulation and the former satisfies a proposition, the latter does as
+/-- If two states are bisimilar and the former satisfies a proposition, the latter does as
 well. -/
 @[scoped grind ⇒]
-lemma bisimulation_satisfies {lts : LTS State Label}
-    {hrb : lts.IsBisimulation r}
-    (hr : r s1 s2) (a : Proposition Label) (hs : Satisfies lts s1 a) :
+lemma bisimilarity_satisfies {lts : LTS State Label}
+    (hr : s1 ~[lts] s2) (a : Proposition Label) (hs : Satisfies lts s1 a) :
     Satisfies lts s2 a := by
   induction a generalizing s1 s2 with
-  | diamond => cases hs with | diamond htr _ => grind [hrb.follow_fst hr htr]
-  | _ => grind
+  | diamond μ a ih =>
+    cases hs with
+    | diamond htr _ => grind [Bisimilarity.is_bisimulation]
+  | _ => grind [Bisimilarity.symm]
 
-lemma bisimulation_TheoryEq {lts : LTS State Label}
-    {hrb : lts.IsBisimulation r}
-    (hr : r s1 s2) :
+lemma bisimilarity_TheoryEq {lts : LTS State Label}
+    (hr : s1 ~[lts] s2) :
     TheoryEq lts s1 s2 := by
   have : s2 ~[lts] s1 := by grind [Bisimilarity.symm]
   grind
@@ -258,9 +259,7 @@ theorem theoryEq_eq_bisimilarity (lts : LTS State Label)
   ext s1 s2
   apply Iff.intro <;> intro h
   · exists TheoryEq lts
-    grind
-  · obtain ⟨r, hr, hrb⟩ := h
-    apply bisimulation_TheoryEq hr
-    exact hrb
+    exact ⟨h, theoryEq_isBisimulation lts⟩
+  · exact bisimilarity_TheoryEq h
 
 end Cslib.Logic.HML
