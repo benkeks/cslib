@@ -7,6 +7,7 @@ Authors: Fabrizio Montesi, Marco Peressotti, Alexandre Rademaker
 module
 
 public import Cslib.Foundations.Semantics.LTS.Bisimulation
+public import Cslib.Foundations.Semantics.LTS.Simulation
 
 @[expose] public section
 
@@ -123,6 +124,10 @@ abbrev theory (lts : LTS State Label) (s : State) : Set (Proposition Label) :=
 abbrev TheoryEq (lts : LTS State Label) (s1 s2 : State) :=
   theory lts s1 = theory lts s2
 
+theorem TheoryEq.is_symm {s1 s2 : State}
+  (h : TheoryEq lts s1 s2) : TheoryEq lts s2 s1 :=
+  by grind
+
 open Proposition LTS Bisimulation Simulation
 
 /-- Characterisation theorem for the denotational semantics. -/
@@ -198,41 +203,25 @@ theorem propositions_satisfies_conjunction (htr : lts.Tr s1 μ s1')
 
 end ImageToPropositions
 
-/-- Theory equivalence is a bisimulation. -/
+/-- Theory equivalence is a simulation. -/
 @[scoped grind ⇒]
-theorem theoryEq_isBisimulation (lts : LTS State Label)
+theorem theoryEq_isSimulation (lts : LTS State Label)
     [image_finite : ∀ s μ, Finite (lts.image s μ)] :
-    lts.IsBisimulation (TheoryEq lts) := by
+    Simulation lts (TheoryEq lts) := by
   intro s1 s2 h μ
   let (s : State) := @Fintype.ofFinite (lts.image s μ) (image_finite s μ)
-  constructor
-  case left =>
-    intro s1' htr
-    by_contra
-    have hdist : ∀ s2' : lts.image s2 μ, ∃ a, Satisfies lts s1' a ∧ ¬Satisfies lts s2'.val a := by
-      intro ⟨s2', hs2'⟩
-      apply not_theoryEq_satisfies
-      grind
-    choose dist_formula hdist_spec using hdist
-    let conjunction := Proposition.finiteAnd (propositions dist_formula)
-    have hs1_diamond : Satisfies lts s1 (.diamond μ conjunction) := by
-      grind [propositions_satisfies_conjunction]
-    cases (theoryEq_satisfies h hs1_diamond) with | @diamond _ s2'' _ _ htr2 hsat =>
-    grind [propositions_complete dist_formula ⟨s2'', htr2⟩]
-  case right =>
-    -- Symmetric to left case
-    intro s2' htr
-    by_contra
-    have hdist : ∀ s1' : lts.image s1 μ, ∃ a, Satisfies lts s2' a ∧ ¬Satisfies lts s1'.val a := by
-      intro ⟨s1', hs1'⟩
-      apply not_theoryEq_satisfies
-      grind
-    choose dist_formula hdist_spec using hdist
-    let conjunction := Proposition.finiteAnd (propositions dist_formula)
-    have hs2_diamond : Satisfies lts s2 (.diamond μ conjunction) := by
-      grind [propositions_satisfies_conjunction]
-    cases (theoryEq_satisfies h.symm hs2_diamond) with | @diamond _ s1'' _ _ htr1 hsat =>
-    grind [propositions_complete dist_formula ⟨s1'', htr1⟩]
+  intros s1' htr
+  by_contra
+  have hdist : ∀ s2' : lts.image s2 μ, ∃ a, Satisfies lts s1' a ∧ ¬Satisfies lts s2'.val a := by
+    intro ⟨s2', hs2'⟩
+    apply not_theoryEq_satisfies
+    grind
+  choose dist_formula hdist_spec using hdist
+  let conjunction := Proposition.finiteAnd (propositions dist_formula)
+  have hs1_diamond : Satisfies lts s1 (.diamond μ conjunction) := by
+    grind [propositions_satisfies_conjunction]
+  cases (theoryEq_satisfies h hs1_diamond) with | @diamond _ s2'' _ _ htr2 hsat =>
+  grind [propositions_complete dist_formula ⟨s2'', htr2⟩]
 
 /-- If two states are bisimilar and the former satisfies a proposition, the latter does as
 well. -/
@@ -258,8 +247,8 @@ theorem theoryEq_eq_bisimilarity (lts : LTS State Label)
     TheoryEq lts = Bisimilarity lts := by
   ext s1 s2
   apply Iff.intro <;> intro h
-  · exists TheoryEq lts
-    exact ⟨h, theoryEq_isBisimulation lts⟩
+  · rw [Bisimilarity.symm_simulation]
+    exact ⟨TheoryEq lts, h, Std.Symm.mk (fun _ _ => TheoryEq.is_symm), theoryEq_isSimulation lts⟩
   · exact bisimilarity_TheoryEq h
 
 end Cslib.Logic.HML
