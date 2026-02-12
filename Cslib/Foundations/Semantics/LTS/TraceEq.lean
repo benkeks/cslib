@@ -41,6 +41,10 @@ variable {State : Type u} {Label : Type v} (lts : LTS State Label)
 transition labelled by `μs` originating from `s`. -/
 def LTS.traces (s : State) := { μs : List Label | ∃ s', lts.MTr s μs s' }
 
+lemma LTS.empty_trace_trivial (s : State) : [] ∈ lts.traces s := by
+  have : lts.MTr s [] s := MTr.refl
+  grind [traces]
+
 /-- If there is a multi-step transition from `s` labelled by `μs`, then `μs` is in the traces of
 `s`. -/
 theorem LTS.traces_in (s : State) (μs : List Label) (s' : State) (h : lts.MTr s μs s') :

@@ -6,8 +6,7 @@ Authors: Fabrizio Montesi, Marco Peressotti, Alexandre Rademaker
 
 module
 
-public import Cslib.Foundations.Semantics.LTS.Bisimulation
-public import Cslib.Foundations.Semantics.LTS.Simulation
+public import Cslib.Foundations.Semantics.LTS.Basic
 
 @[expose] public section
 
@@ -128,7 +127,7 @@ theorem TheoryEq.is_symm {s1 s2 : State}
   (h : TheoryEq lts s1 s2) : TheoryEq lts s2 s1 :=
   by grind
 
-open Proposition LTS Bisimulation Simulation
+open Proposition LTS
 
 /-- Characterisation theorem for the denotational semantics. -/
 @[scoped grind =]
@@ -202,53 +201,5 @@ theorem propositions_satisfies_conjunction (htr : lts.Tr s1 μ s1')
   grind [List.mem_map.mp ha_mem]
 
 end ImageToPropositions
-
-/-- Theory equivalence is a simulation. -/
-@[scoped grind ⇒]
-theorem theoryEq_isSimulation (lts : LTS State Label)
-    [image_finite : ∀ s μ, Finite (lts.image s μ)] :
-    Simulation lts (TheoryEq lts) := by
-  intro s1 s2 h μ
-  let (s : State) := @Fintype.ofFinite (lts.image s μ) (image_finite s μ)
-  intros s1' htr
-  by_contra
-  have hdist : ∀ s2' : lts.image s2 μ, ∃ a, Satisfies lts s1' a ∧ ¬Satisfies lts s2'.val a := by
-    intro ⟨s2', hs2'⟩
-    apply not_theoryEq_satisfies
-    grind
-  choose dist_formula hdist_spec using hdist
-  let conjunction := Proposition.finiteAnd (propositions dist_formula)
-  have hs1_diamond : Satisfies lts s1 (.diamond μ conjunction) := by
-    grind [propositions_satisfies_conjunction]
-  cases (theoryEq_satisfies h hs1_diamond) with | @diamond _ s2'' _ _ htr2 hsat =>
-  grind [propositions_complete dist_formula ⟨s2'', htr2⟩]
-
-/-- If two states are bisimilar and the former satisfies a proposition, the latter does as
-well. -/
-@[scoped grind ⇒]
-lemma bisimilarity_satisfies {lts : LTS State Label}
-    (hr : s1 ~[lts] s2) (a : Proposition Label) (hs : Satisfies lts s1 a) :
-    Satisfies lts s2 a := by
-  induction a generalizing s1 s2 with
-  | diamond μ a ih =>
-    cases hs with
-    | diamond htr _ => grind [Bisimilarity.is_bisimulation]
-  | _ => grind [Bisimilarity.symm]
-
-lemma bisimilarity_TheoryEq {lts : LTS State Label}
-    (hr : s1 ~[lts] s2) :
-    TheoryEq lts s1 s2 := by
-  have : s2 ~[lts] s1 := by grind [Bisimilarity.symm]
-  grind
-
-/-- Theory equivalence and bisimilarity coincide for image-finite LTSs. -/
-theorem theoryEq_eq_bisimilarity (lts : LTS State Label)
-    [image_finite : ∀ s μ, Finite (lts.image s μ)] :
-    TheoryEq lts = Bisimilarity lts := by
-  ext s1 s2
-  apply Iff.intro <;> intro h
-  · rw [Bisimilarity.symm_simulation]
-    exact ⟨TheoryEq lts, h, Std.Symm.mk (fun _ _ => TheoryEq.is_symm), theoryEq_isSimulation lts⟩
-  · exact bisimilarity_TheoryEq h
 
 end Cslib.Logic.HML
