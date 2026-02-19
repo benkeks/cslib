@@ -76,28 +76,48 @@ def Proposition.finiteAnd (as : List (Proposition Label)) : Proposition Label :=
 def Proposition.finiteOr (as : List (Proposition Label)) : Proposition Label :=
   List.foldr .or .false as
 
-/-- Satisfaction relation. `Satisfies lts s a` means that, in the LTS `lts`, the state `s` satisfies
-the proposition `a`. -/
-@[scoped grind]
-inductive Satisfies (lts : LTS State Label) : State → Proposition Label → Prop where
-  | true {s : State} : Satisfies lts s .true
-  | and {s : State} {a b : Proposition Label} :
-    Satisfies lts s a → Satisfies lts s b →
-    Satisfies lts s (.and a b)
-  | diamond {s s' : State} {μ : Label} {a : Proposition Label}
-    (htr : lts.Tr s μ s') (hs : Satisfies lts s' a) : Satisfies lts s (.diamond μ a)
-  | negAnd₁ {s : State} {a b : Proposition Label} :
-    Satisfies lts s (.neg a) →
-    Satisfies lts s (.neg (.and a b))
-  | negAnd₂ {s : State} {a b : Proposition Label} :
-    Satisfies lts s (.neg b) →
-    Satisfies lts s (.neg (.and a b))
-  | negNeg {s : State} {a : Proposition Label} :
-    Satisfies lts s a →
-    Satisfies lts s (.neg (.neg a))
-  | negDiamond {s : State} {μ : Label} {a : Proposition Label} :
-    (∀ s', lts.Tr s μ s' → Satisfies lts s' a.neg) →
-    Satisfies lts s (.neg (.diamond μ a))
+mutual
+  /-- Satisfaction relation. `Satisfies lts s a` means that, in the LTS `lts`,
+    the state `s` satisfies the proposition `a`. -/
+  @[scoped grind]
+  inductive Satisfies (lts : LTS State Label) : State → Proposition Label → Prop where
+    | true {s : State} : Satisfies lts s .true
+    | and {s : State} {a b : Proposition Label} :
+      Satisfies lts s a → Satisfies lts s b →
+      Satisfies lts s (.and a b)
+    | diamond {s s' : State} {μ : Label} {a : Proposition Label}
+      (htr : lts.Tr s μ s') (hs : Satisfies lts s' a) : Satisfies lts s (.diamond μ a)
+    | neg {s : State} {a : Proposition Label} :
+      Unsatisfies lts s a →
+      Satisfies lts s (.neg a)
+
+  /-- Unsatisfaction relation. `Unsatisfies lts s a` means that, in the LTS `lts`,
+    the state `s` does not satisfy the proposition `a`. -/
+  @[scoped grind]
+  inductive Unsatisfies (lts : LTS State Label) : State → Proposition Label → Prop where
+    | negAnd₁ {s : State} {a b : Proposition Label} :
+      Unsatisfies lts s a →
+      Unsatisfies lts s (.and a b)
+    | negAnd₂ {s : State} {a b : Proposition Label} :
+      Unsatisfies lts s b →
+      Unsatisfies lts s (.and a b)
+    | negDiamond {s : State} {μ : Label} {a : Proposition Label} :
+      (∀ s', lts.Tr s μ s' → Unsatisfies lts s' a) →
+      Unsatisfies lts s (.diamond μ a)
+    | negNeg {s : State} {a : Proposition Label} :
+      Satisfies lts s a →
+      Unsatisfies lts s (.neg a)
+end
+
+example : Satisfies lts s (.box a .true) := by
+  repeat constructor
+  intro s htr
+  repeat constructor
+
+example : Satisfies lts s (.and (.neg .false) (.box a .true)) := by
+  repeat constructor
+  intro s htr
+  repeat constructor
 
 /-- A state satisfies a proposition iff it does not satisfy the negation of the proposition. -/
 @[simp, scoped grind =]
