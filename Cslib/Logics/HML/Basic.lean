@@ -50,18 +50,22 @@ namespace Cslib.Logic.HML
 
 /-- Propositions. -/
 inductive Proposition (Label : Type u) : Type u where
-  | true
-  | and (φ₁ φ₂ : Proposition Label)
-  | neg (φ : Proposition Label)
+  | false
+  | imp (φ₁ φ₂ : Proposition Label)
   | diamond (μ : Label) (φ : Proposition Label)
 
-/-- false, or, and box operators as notation -/
 @[simp, scoped grind =]
-abbrev Proposition.false : Proposition Label :=
-  neg .true
+abbrev Proposition.neg (φ : Proposition Label) : Proposition Label :=
+  imp φ .false
+@[simp, scoped grind =]
+abbrev Proposition.true : Proposition Label :=
+  neg .false
 @[simp, scoped grind =]
 abbrev Proposition.or (φ₁ φ₂ : Proposition Label) : Proposition Label :=
-  neg (and (neg φ₁) (neg φ₂))
+  (imp (neg φ₁) φ₂)
+@[simp, scoped grind =]
+abbrev Proposition.and (φ₁ φ₂ : Proposition Label) : Proposition Label :=
+  neg (or (neg φ₁) (neg φ₂))
 @[simp, scoped grind =]
 abbrev Proposition.box (μ : Label) (φ : Proposition Label) : Proposition Label :=
   neg (diamond μ (neg φ))
@@ -81,58 +85,142 @@ mutual
     the state `s` satisfies the proposition `a`. -/
   @[scoped grind]
   inductive Satisfies (lts : LTS State Label) : State → Proposition Label → Prop where
-    | true {s : State} : Satisfies lts s .true
-    | and {s : State} {a b : Proposition Label} :
-      Satisfies lts s a → Satisfies lts s b →
-      Satisfies lts s (.and a b)
+    | imp_triv {s : State} {a b : Proposition Label} :
+      Unsatisfies lts s a →
+      Satisfies lts s (.imp a b)
+    | imp_true {s : State} {a b : Proposition Label} :
+      Satisfies lts s b →
+      Satisfies lts s (.imp a b)
     | diamond {s s' : State} {μ : Label} {a : Proposition Label}
       (htr : lts.Tr s μ s') (hs : Satisfies lts s' a) : Satisfies lts s (.diamond μ a)
-    | neg {s : State} {a : Proposition Label} :
-      Unsatisfies lts s a →
-      Satisfies lts s (.neg a)
 
-  /-- Unsatisfaction relation. `Unsatisfies lts s a` means that, in the LTS `lts`,
-    the state `s` does not satisfy the proposition `a`. -/
-  @[scoped grind]
   inductive Unsatisfies (lts : LTS State Label) : State → Proposition Label → Prop where
-    | negAnd₁ {s : State} {a b : Proposition Label} :
-      Unsatisfies lts s a →
-      Unsatisfies lts s (.and a b)
-    | negAnd₂ {s : State} {a b : Proposition Label} :
-      Unsatisfies lts s b →
-      Unsatisfies lts s (.and a b)
-    | negDiamond {s : State} {μ : Label} {a : Proposition Label} :
-      (∀ s', lts.Tr s μ s' → Unsatisfies lts s' a) →
+    | false {s : State} : Unsatisfies lts s .false
+    | imp_false {s : State} {a b : Proposition Label} :
+      Satisfies lts s a → Unsatisfies lts s b →
+      Unsatisfies lts s (.imp a b)
+    | diamond {s : State} {μ : Label} {a : Proposition Label}
+      (htr : ∀ s', lts.Tr s μ s' → Unsatisfies lts s' a) :
       Unsatisfies lts s (.diamond μ a)
-    | negNeg {s : State} {a : Proposition Label} :
-      Satisfies lts s a →
-      Unsatisfies lts s (.neg a)
 end
+
+@[simp, scoped grind =]
+theorem unsatisfies_diamond_iff {lts : LTS State Label} {s : State} {μ : Label}
+    {a : Proposition Label} :
+    Unsatisfies lts s (.diamond μ a) ↔
+      ∀ s', ¬ lts.Tr s μ s' ∨ Unsatisfies lts s' a := by
+  constructor
+  · intro h s'
+    cases h with
+    | diamond htr =>
+      by_cases htr' : lts.Tr s μ s'
+      · exact Or.inr (htr s' htr')
+      · exact Or.inl htr'
+  · intro h
+    apply Unsatisfies.diamond
+    intro s' htr
+    cases h s' with
+    | inl hntr => exact False.elim (hntr htr)
+    | inr hsat => exact hsat
 
 example : Satisfies lts s (.box a .true) := by
   repeat constructor
-  intro s htr
+  intros
   repeat constructor
 
-example : Satisfies lts s (.and (.neg .false) (.box a .true)) := by
-  repeat constructor
-  intro s htr
-  repeat constructor
+mutual
+  theorem satisfies_not_unsatisfies {lts : LTS State Label} {s : State} {a : Proposition Label} :
+      Satisfies lts s a → ¬ Unsatisfies lts s a := by
+    intro hs hu
+    cases hs with
+    | imp_triv hua =>
+      cases hu with
+      | imp_false hsa _ =>
+        exact unsatisfies_not_satisfies hua hsa
+    | imp_true hsb =>
+      cases hu with
+      | imp_false _ hub =>
+        exact satisfies_not_unsatisfies hsb hub
+    | diamond htr hs' =>
+      cases hu with
+      | diamond hall =>
+        exact satisfies_not_unsatisfies hs' (hall _ htr)
+
+  theorem unsatisfies_not_satisfies {lts : LTS State Label} {s : State} {a : Proposition Label} :
+      Unsatisfies lts s a → ¬ Satisfies lts s a := by
+    intro hu hs
+    cases hu with
+    | false =>
+      cases hs
+    | imp_false hsa hub =>
+      cases hs with
+      | imp_triv hua =>
+        exact satisfies_not_unsatisfies hsa hua
+      | imp_true hsb =>
+        exact unsatisfies_not_satisfies hub hsb
+    | diamond hall =>
+      cases hs with
+      | diamond htr hs' =>
+        exact unsatisfies_not_satisfies (hall _ htr) hs'
+end
+
+theorem satisfies_or_unsatisfies {lts : LTS State Label} (s : State) (a : Proposition Label) :
+    Satisfies lts s a ∨ Unsatisfies lts s a := by
+  classical
+  induction a generalizing s with
+  | false =>
+    exact Or.inr Unsatisfies.false
+  | imp a b iha ihb =>
+    cases iha s with
+    | inl hsa =>
+      cases ihb s with
+      | inl hsb => exact Or.inl (Satisfies.imp_true hsb)
+      | inr hub => exact Or.inr (Unsatisfies.imp_false hsa hub)
+    | inr hua =>
+      exact Or.inl (Satisfies.imp_triv hua)
+  | diamond μ a iha =>
+    by_cases hex : ∃ s', lts.Tr s μ s' ∧ Satisfies lts s' a
+    · rcases hex with ⟨s', htr, hs'⟩
+      exact Or.inl (Satisfies.diamond htr hs')
+    · refine Or.inr ?_
+      apply Unsatisfies.diamond
+      intro s' htr
+      cases iha s' with
+      | inl hs' =>
+        exact False.elim (hex ⟨s', htr, hs'⟩)
+      | inr hu' =>
+        exact hu'
+
+@[simp, scoped grind =]
+theorem not_satisfies_iff_unsatisfies {lts : LTS State Label} {s : State} {a : Proposition Label} :
+    ¬ Satisfies lts s a ↔ Unsatisfies lts s a := by
+  constructor
+  · intro h
+    cases satisfies_or_unsatisfies (lts := lts) s a with
+    | inl hs => exact False.elim (h hs)
+    | inr hu => exact hu
+  · intro hu
+    exact unsatisfies_not_satisfies hu
 
 /-- A state satisfies a proposition iff it does not satisfy the negation of the proposition. -/
 @[simp, scoped grind =]
 theorem neg_satisfies {lts : LTS State Label} :
     ¬Satisfies lts s a.neg ↔ Satisfies lts s a := by
-  induction a generalizing s <;> grind
+  rw [Proposition.neg, not_satisfies_iff_unsatisfies]
+  constructor
+  · intro h
+    cases h with
+    | imp_false hs _ => exact hs
+  · intro hs
+    exact Unsatisfies.imp_false hs Unsatisfies.false
 
 /-- Denotation of a proposition. -/
 @[simp, scoped grind =]
 def Proposition.denotation (a : Proposition Label) (lts : LTS State Label)
     : Set State :=
   match a with
-  | .true => Set.univ
-  | .and a b => a.denotation lts ∩ b.denotation lts
-  | .neg a => {s | s ∉ a.denotation lts}
+  | .false => ∅
+  | .imp a b => {s | s ∉ a.denotation lts ∨ s ∈ b.denotation lts}
   | .diamond μ a => {s | ∃ s', lts.Tr s μ s' ∧ s' ∈ a.denotation lts}
 
 /-- The theory of a state is the set of all propositions that it satifies. -/
@@ -153,7 +241,53 @@ open Proposition LTS
 @[scoped grind =]
 theorem satisfies_mem_denotation {lts : LTS State Label} :
     Satisfies lts s a ↔ s ∈ a.denotation lts := by
-  induction a generalizing s <;> grind
+  induction a generalizing s with
+  | false =>
+    constructor
+    · intro hs
+      cases hs
+    · intro hs
+      simp at hs
+  | imp a b iha ihb =>
+    constructor
+    · intro hs
+      cases hs with
+      | imp_triv hua =>
+        left
+        intro hmem
+        exact unsatisfies_not_satisfies hua ((iha).2 hmem)
+      | imp_true hsb =>
+        right
+        exact (ihb).1 hsb
+    · intro hmem
+      cases hmem with
+      | inl hna =>
+        apply Satisfies.imp_triv
+        apply (not_satisfies_iff_unsatisfies (lts := lts) (s := s) (a := a)).1
+        intro hs
+        exact hna ((iha).1 hs)
+      | inr hmb =>
+        exact Satisfies.imp_true ((ihb).2 hmb)
+  | diamond μ a iha =>
+    constructor
+    · intro hs
+      cases hs with
+      | diamond htr hs' =>
+        exact ⟨_, htr, (iha).1 hs'⟩
+    · intro h
+      rcases h with ⟨s', htr, hs'⟩
+      exact Satisfies.diamond htr ((iha).2 hs')
+
+@[simp]
+theorem not_satisfies_false {lts : LTS State Label} :
+    ¬ Satisfies lts s (.false : Proposition Label) := by
+  intro hs
+  cases hs
+
+@[simp]
+theorem satisfies_true {lts : LTS State Label} :
+    Satisfies lts s (.true : Proposition Label) := by
+  exact Satisfies.imp_triv Unsatisfies.false
 
 /-- A state is in the denotation of a proposition iff it is not in the denotation of the negation
 of the proposition. -/
@@ -162,19 +296,73 @@ theorem neg_denotation {lts : LTS State Label} (a : Proposition Label) :
     s ∉ a.neg.denotation lts ↔ s ∈ a.denotation lts := by
   grind [_=_ satisfies_mem_denotation]
 
+@[simp, scoped grind =]
+theorem satisfies_or_iff {lts : LTS State Label} :
+    Satisfies lts s (a.or b) ↔ Satisfies lts s a ∨ Satisfies lts s b := by
+  rw [satisfies_mem_denotation, satisfies_mem_denotation, satisfies_mem_denotation]
+  simp [Proposition.denotation]
+
+@[simp, scoped grind =]
+theorem satisfies_and_iff {lts : LTS State Label} :
+    Satisfies lts s (a.and b) ↔ Satisfies lts s a ∧ Satisfies lts s b := by
+  rw [satisfies_mem_denotation, satisfies_mem_denotation, satisfies_mem_denotation]
+  simp [Proposition.denotation]
+
 /-- A state satisfies a finite conjunction iff it satisfies all conjuncts. -/
 @[scoped grind =]
 theorem satisfies_finiteAnd {lts : LTS State Label} {s : State}
     {as : List (Proposition Label)} :
     Satisfies lts s (Proposition.finiteAnd as) ↔ ∀ a ∈ as, Satisfies lts s a := by
-  induction as <;> grind
+  induction as with
+  | nil =>
+    simp [Proposition.finiteAnd]
+  | cons head tail ih =>
+    change Satisfies lts s (head.and (Proposition.finiteAnd tail)) ↔
+      ∀ a ∈ head :: tail, Satisfies lts s a
+    constructor
+    · intro hs a ha
+      have hand := (satisfies_and_iff (lts := lts) (s := s)
+        (a := head) (b := Proposition.finiteAnd tail)).1 hs
+      rcases List.mem_cons.mp ha with rfl | htail
+      · exact hand.1
+      · exact (ih.1 hand.2) a htail
+    · intro h
+      apply (satisfies_and_iff (lts := lts) (s := s)
+        (a := head) (b := Proposition.finiteAnd tail)).2
+      refine ⟨h head (by simp), ?_⟩
+      apply ih.2
+      intro a ha
+      exact h a (List.mem_cons_of_mem _ ha)
 
 /-- A state satisfies a finite disjunction iff it satisfies some disjunct. -/
 @[scoped grind =]
 theorem satisfies_finiteOr {lts : LTS State Label} {s : State}
     {as : List (Proposition Label)} :
     Satisfies lts s (Proposition.finiteOr as) ↔ ∃ a ∈ as, Satisfies lts s a := by
-  induction as <;> grind
+  induction as with
+  | nil =>
+    simp [Proposition.finiteOr]
+  | cons head tail ih =>
+    change Satisfies lts s (head.or (Proposition.finiteOr tail)) ↔
+      ∃ a ∈ head :: tail, Satisfies lts s a
+    constructor
+    · intro hs
+      have hor := (satisfies_or_iff (lts := lts) (s := s)
+        (a := head) (b := Proposition.finiteOr tail)).1 hs
+      cases hor with
+      | inl hhead =>
+        exact ⟨head, by simp, hhead⟩
+      | inr htail =>
+        rcases ih.1 htail with ⟨a, ha, hsa⟩
+        exact ⟨a, List.mem_cons_of_mem _ ha, hsa⟩
+    · intro h
+      rcases h with ⟨a, ha, hsa⟩
+      rcases List.mem_cons.mp ha with rfl | htail
+      · exact (satisfies_or_iff (lts := lts) (s := s)
+          (a := a) (b := Proposition.finiteOr tail)).2 (Or.inl hsa)
+      · exact (satisfies_or_iff (lts := lts) (s := s)
+          (a := head) (b := Proposition.finiteOr tail)).2
+          (Or.inr (ih.2 ⟨a, htail, hsa⟩))
 
 @[scoped grind →]
 theorem satisfies_theory (h : Satisfies lts s a) : a ∈ theory lts s := by
