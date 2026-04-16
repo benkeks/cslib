@@ -40,26 +40,24 @@ def hml_to_trace {Label} (φ : Proposition Label) (lin : linear φ) : List Label
 lemma hml_sat_to_trace {State Label} (lts : LTS State Label) (φ : Proposition Label) (s : State)
   (hsat : Satisfies lts s φ) (hlin : linear φ) :
   hml_to_trace φ hlin ∈ lts.traces s := by
-  induction φ generalizing s with
+  induction hlin generalizing s with
   | true =>
-    grind [LTS.empty_trace_trivial, hml_to_trace]
-  | diamond μ φ ih =>
-    have step : ∃ s' , lts.Tr s μ s' ∧
-      hml_to_trace φ (linear_closed μ φ hlin) ∈ lts.traces s' := by grind
-    obtain ⟨s', htr, htraces⟩ := step
-    have : μ :: hml_to_trace φ (linear_closed μ φ hlin) ∈ lts.traces s := by
+    simpa [hml_to_trace, Proposition.true] using (LTS.empty_trace_trivial (lts := lts) (s := s))
+  | @diamond μ φ' lin' ih =>
+    cases hsat with
+    | diamond htr hs' =>
+      have htraces : hml_to_trace φ' lin' ∈ lts.traces _ := ih (s := _) hs'
       obtain ⟨s'', htr'⟩ := htraces
-      exists s''
-      exact (MTr.stepL htr htr')
-    grind [traces, hml_to_trace, linear_closed]
-  | _ => grind [linear]
+      have hstep : μ :: hml_to_trace φ' lin' ∈ lts.traces s := ⟨s'', MTr.stepL htr htr'⟩
+      simpa [hml_to_trace, linear_closed] using hstep
 
 lemma trace_to_hml_inv (φ : Proposition Label) (lin : linear φ) :
     trace_to_hml (hml_to_trace φ lin) = φ := by
-  induction φ with
-  | true => rfl
-  | diamond μ φ ih => grind [hml_to_trace, trace_to_hml]
-  | _ => cases lin
+  induction lin with
+  | true =>
+    simp [hml_to_trace, trace_to_hml, Proposition.true]
+  | @diamond μ φ' lin' ih =>
+    simpa [hml_to_trace, trace_to_hml] using ih
 
 lemma hml_to_trace_inv (tr : List Label) :
     (hml_to_trace (trace_to_hml tr) (trace_to_hml_linear tr)) = tr := by
@@ -131,8 +129,13 @@ lemma bisimilarity_satisfies {lts : LTS State Label}
 lemma bisimilarity_TheoryEq {lts : LTS State Label}
     (hr : s1 ~[lts] s2) :
     TheoryEq lts s1 s2 := by
-  have : s2 ~[lts] s1 := by grind [Bisimilarity.symm]
-  grind
+  apply Set.ext
+  intro a
+  constructor
+  · intro hs
+    exact bisimilarity_satisfies hr a hs
+  · intro hs
+    exact bisimilarity_satisfies (Bisimilarity.symm hr) a hs
 
 /-- Theory equivalence and bisimilarity coincide for image-finite LTSs. -/
 theorem theoryEq_eq_bisimilarity (lts : LTS State Label)

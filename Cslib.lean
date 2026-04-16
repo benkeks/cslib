@@ -50,6 +50,7 @@ public import Cslib.Foundations.Semantics.LTS.Bisimulation
 public import Cslib.Foundations.Semantics.LTS.Simulation
 public import Cslib.Foundations.Semantics.LTS.TraceEq
 public import Cslib.Foundations.Semantics.ReductionSystem.Basic
+public import Cslib.Foundations.Semantics.Satisfaction
 public import Cslib.Foundations.Syntax.Congruence
 public import Cslib.Foundations.Syntax.Context
 public import Cslib.Foundations.Syntax.HasAlphaEquiv

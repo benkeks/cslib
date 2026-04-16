@@ -7,6 +7,7 @@ Authors: Fabrizio Montesi, Marco Peressotti, Alexandre Rademaker
 module
 
 public import Cslib.Foundations.Semantics.LTS.Basic
+public import Cslib.Foundations.Semantics.Satisfaction
 
 @[expose] public section
 
@@ -45,6 +46,8 @@ distinguishing proposition that one state satisfies and the other does not.
 * [L. Aceto, A. Ingólfsdóttir, *Testing Hennessy-Milner Logic with Recursion*][Aceto1999]
 
 -/
+
+
 
 namespace Cslib.Logic.HML
 
@@ -103,6 +106,9 @@ mutual
       (htr : ∀ s', lts.Tr s μ s' → Unsatisfies lts s' a) :
       Unsatisfies lts s (.diamond μ a)
 end
+
+instance : HasSatisfaction (LTS State Label) State (Proposition Label) where
+  satisfies := Satisfies
 
 @[simp, scoped grind =]
 theorem unsatisfies_diamond_iff {lts : LTS State Label} {s : State} {μ : Label}
@@ -222,18 +228,6 @@ def Proposition.denotation (a : Proposition Label) (lts : LTS State Label)
   | .false => ∅
   | .imp a b => {s | s ∉ a.denotation lts ∨ s ∈ b.denotation lts}
   | .diamond μ a => {s | ∃ s', lts.Tr s μ s' ∧ s' ∈ a.denotation lts}
-
-/-- The theory of a state is the set of all propositions that it satifies. -/
-abbrev theory (lts : LTS State Label) (s : State) : Set (Proposition Label) :=
-  {a | Satisfies lts s a}
-
-/-- Two states are theory-equivalent (for a specific LTS) if they have the same theory. -/
-abbrev TheoryEq (lts : LTS State Label) (s1 s2 : State) :=
-  theory lts s1 = theory lts s2
-
-theorem TheoryEq.is_symm {s1 s2 : State}
-  (h : TheoryEq lts s1 s2) : TheoryEq lts s2 s1 :=
-  by grind
 
 open Proposition LTS
 
@@ -366,26 +360,51 @@ theorem satisfies_finiteOr {lts : LTS State Label} {s : State}
 
 @[scoped grind →]
 theorem satisfies_theory (h : Satisfies lts s a) : a ∈ theory lts s := by
-  grind
+  exact h
 
 /-- Two states are theory-equivalent iff they are denotationally equivalent. -/
 theorem theoryEq_denotation_eq {lts : LTS State Label} :
-    TheoryEq lts s1 s2 ↔
+    Cslib.TheoryEq (Formula := Proposition Label) lts s1 s2 ↔
     (∀ a : Proposition Label, s1 ∈ a.denotation lts ↔ s2 ∈ a.denotation lts) := by
-  grind [_=_ satisfies_mem_denotation]
+  constructor
+  · intro h a
+    have hsat : Satisfies lts s1 a ↔ Satisfies lts s2 a := by
+      change a ∈ theory lts s1 ↔ a ∈ theory lts s2
+      exact Iff.of_eq (congrArg (fun t => a ∈ t) h)
+    simpa [satisfies_mem_denotation] using hsat
+  · intro h
+    apply Set.ext
+    intro a
+    change Satisfies lts s1 a ↔ Satisfies lts s2 a
+    simpa [satisfies_mem_denotation] using h a
 
 /-- If two states are not theory equivalent, there exists a distinguishing proposition. -/
-lemma not_theoryEq_satisfies (h : ¬ TheoryEq lts s1 s2) :
+lemma not_theoryEq_satisfies {State Label s1 s2} {lts : LTS State Label}
+    (h : ¬ Cslib.TheoryEq (Formula := Proposition Label) lts s1 s2) :
     ∃ a, (Satisfies lts s1 a ∧ ¬Satisfies lts s2 a) := by
-  grind [=_ neg_satisfies]
+  classical
+  by_contra hdist
+  apply h
+  apply Set.ext
+  intro a
+  change Satisfies lts s1 a ↔ Satisfies lts s2 a
+  constructor <;> intro hs
+  · by_contra hs2
+    exact hdist ⟨a, hs, hs2⟩
+  · by_contra hs1
+    have hs1_neg : Satisfies lts s1 a.neg := by
+      apply Satisfies.imp_triv
+      exact (not_satisfies_iff_unsatisfies (lts := lts) (s := s1) (a := a)).1 hs1
+    have hs2_not_neg : ¬Satisfies lts s2 a.neg :=
+      (neg_satisfies (lts := lts) (s := s2) (a := a)).2 hs
+    exact hdist ⟨a.neg, hs1_neg, hs2_not_neg⟩
 
 /-- If two states are theory equivalent and the former satisfies a proposition, the latter does as
 well. -/
-theorem theoryEq_satisfies {lts : LTS State Label} (h : TheoryEq lts s1 s2)
+theorem theoryEq_satisfies {lts : LTS State Label}
+    (h : Cslib.TheoryEq (Formula := Proposition Label) lts s1 s2)
     (hs : Satisfies lts s1 a) : Satisfies lts s2 a := by
-  unfold TheoryEq theory at h
-  rw [Set.ext_iff] at h
-  exact (h a).mp hs
+  exact Cslib.theoryEq_satisfies (model := lts) (w1 := s1) (w2 := s2) (formula := a) h hs
 
 section ImageToPropositions
 
